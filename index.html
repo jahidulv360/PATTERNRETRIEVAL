@@ -1,0 +1,688 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PATTERN RETRIEVAL — Hopfield Memory Network</title>
+<meta property="og:title" content="PATTERN RETRIEVAL">
+<meta property="og:description" content="Watch AI memory recover corrupted patterns in real-time. A Hopfield Neural Network demo.">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&family=VT323&display=swap');
+
+  :root {
+    --green: #00ff41;
+    --green-dim: #00aa2a;
+    --green-glow: #00ff4155;
+    --amber: #ffb300;
+    --red: #ff3131;
+    --bg: #020a04;
+    --bg2: #050f07;
+    --border: #1a3320;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--green);
+    font-family: 'Share Tech Mono', monospace;
+    min-height: 100vh;
+    overflow-x: hidden;
+    cursor: crosshair;
+  }
+
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,255,65,0.012) 2px, rgba(0,255,65,0.012) 4px);
+    pointer-events: none;
+    z-index: 999;
+  }
+
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,0.9) 100%);
+    pointer-events: none;
+    z-index: 998;
+  }
+
+  .container { max-width: 860px; margin: 0 auto; padding: 16px 20px; }
+
+  header { text-align: center; padding: 28px 0 16px; }
+
+  .title-main {
+    font-family: 'Orbitron', sans-serif;
+    font-size: clamp(1.6rem, 6vw, 3rem);
+    font-weight: 900;
+    letter-spacing: 0.18em;
+    color: var(--green);
+    text-shadow: 0 0 20px var(--green), 0 0 50px var(--green-glow), 0 0 100px rgba(0,255,65,0.15);
+    animation: flicker 9s infinite;
+  }
+
+  .title-sub {
+    font-family: 'VT323', monospace;
+    font-size: 1.05rem;
+    color: var(--green-dim);
+    letter-spacing: 0.35em;
+    margin-top: 5px;
+    opacity: 0.65;
+  }
+
+  .status-bar {
+    display: flex;
+    justify-content: center;
+    gap: 24px;
+    margin-top: 10px;
+    font-size: 0.65rem;
+    color: var(--green-dim);
+    letter-spacing: 0.15em;
+    flex-wrap: wrap;
+  }
+
+  .status-bar span::before { content: '[ '; }
+  .status-bar span::after  { content: ' ]'; }
+
+  @keyframes flicker {
+    0%,94%,100%{opacity:1} 95%{opacity:.8} 96%{opacity:1} 97%{opacity:.85} 98%{opacity:1}
+  }
+
+  .deco { display:flex;align-items:center;gap:10px;margin:10px 0;opacity:.25;font-size:.58rem;letter-spacing:.2em;color:var(--green-dim); }
+  .deco::before,.deco::after{content:'';flex:1;height:1px;}
+  .deco::before{background:linear-gradient(90deg,transparent,var(--green-dim));}
+  .deco::after{background:linear-gradient(90deg,var(--green-dim),transparent);}
+
+  /* PATTERN BANK */
+  .panel { background:var(--bg2);border:1px solid var(--border);padding:14px;position:relative;overflow:hidden; }
+  .panel::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--green),transparent);opacity:.2;}
+  .panel-label { font-size:.62rem;letter-spacing:.3em;color:var(--amber);margin-bottom:10px;text-shadow:0 0 8px var(--amber); }
+
+  .pattern-selector { display:flex;gap:6px;flex-wrap:wrap;justify-content:center; }
+
+  .pat-btn {
+    font-family:'VT323',monospace;
+    font-size:1.25rem;
+    width:38px;height:38px;
+    background:#0a1a0e;
+    border:1px solid var(--border);
+    color:var(--green);
+    cursor:pointer;
+    display:flex;align-items:center;justify-content:center;
+    transition:all .15s;
+    position:relative;
+  }
+  .pat-btn:hover,.pat-btn.active {
+    border-color:var(--green);
+    background:rgba(0,255,65,.1);
+    box-shadow:0 0 10px rgba(0,255,65,.3);
+  }
+  .pat-btn .tooltip {
+    display:none;
+    position:absolute;
+    bottom:42px;left:50%;transform:translateX(-50%);
+    background:#0a1a0e;border:1px solid var(--border);
+    font-family:'Share Tech Mono',monospace;
+    font-size:.55rem;letter-spacing:.1em;
+    white-space:nowrap;padding:3px 7px;color:var(--amber);
+    pointer-events:none;z-index:10;
+  }
+  .pat-btn:hover .tooltip { display:block; }
+
+  /* MAIN GRID */
+  .main-grid { display:grid;grid-template-columns:1fr 1fr;gap:2px;margin:12px 0; }
+  @media(max-width:560px){ .main-grid{grid-template-columns:1fr;} }
+
+  /* PIXEL CANVAS */
+  .pixel-canvas { display:flex;flex-direction:column;gap:2px;align-items:center; }
+  .pixel-row { display:flex;gap:2px; }
+
+  .pixel {
+    width:16px;height:16px;
+    transition:background .07s,box-shadow .07s;
+  }
+  @media(max-width:400px){ .pixel{width:12px;height:12px;} }
+
+  .pixel.on  { background:var(--green);box-shadow:0 0 5px var(--green),0 0 10px rgba(0,255,65,.35); }
+  .pixel.off { background:#0a1a0e;border:1px solid #0d1f12; }
+  .pixel.corrupted { background:var(--red);box-shadow:0 0 5px var(--red);animation:gpx .25s infinite; }
+  .pixel.recovering{ background:var(--amber);box-shadow:0 0 7px var(--amber); }
+
+  @keyframes gpx{0%,100%{opacity:1}50%{opacity:.35}}
+
+  /* METRICS */
+  .metrics { display:grid;grid-template-columns:repeat(3,1fr);gap:2px;margin:10px 0; }
+  .metric-box { background:var(--bg2);border:1px solid var(--border);padding:9px;text-align:center; }
+  .metric-val { font-family:'VT323',monospace;font-size:2rem;color:var(--green);text-shadow:0 0 10px var(--green);display:block; }
+  .metric-label { font-size:.52rem;letter-spacing:.2em;color:var(--green-dim);margin-top:1px; }
+
+  .progress-wrap { background:#0a1a0e;border:1px solid var(--border);height:3px;margin:6px 0;overflow:hidden; }
+  .progress-bar { height:100%;background:linear-gradient(90deg,var(--green-dim),var(--green));box-shadow:0 0 8px var(--green);transition:width .25s;width:0%; }
+
+  /* CONTROLS */
+  .controls { display:flex;flex-wrap:wrap;gap:8px;margin:12px 0;justify-content:center; }
+
+  .btn {
+    font-family:'Share Tech Mono',monospace;
+    font-size:.7rem;letter-spacing:.15em;
+    padding:8px 18px;
+    background:transparent;
+    border:1px solid var(--green-dim);
+    color:var(--green);
+    cursor:pointer;
+    text-transform:uppercase;
+    transition:all .15s;
+    clip-path:polygon(6px 0%,100% 0%,calc(100% - 6px) 100%,0% 100%);
+  }
+  .btn:hover { background:rgba(0,255,65,.07);border-color:var(--green);box-shadow:0 0 12px rgba(0,255,65,.25);text-shadow:0 0 8px var(--green); }
+  .btn:active { transform:scale(.97); }
+  .btn.primary { border-color:var(--amber);color:var(--amber);text-shadow:0 0 6px var(--amber); }
+  .btn.primary:hover { background:rgba(255,179,0,.08);box-shadow:0 0 12px rgba(255,179,0,.25); }
+  .btn:disabled { opacity:.28;cursor:not-allowed;pointer-events:none; }
+
+  /* NOISE SLIDER */
+  .slider-wrap { display:flex;align-items:center;gap:12px;margin:6px 0;font-size:.62rem;letter-spacing:.1em;color:var(--green-dim); }
+  input[type=range] {
+    -webkit-appearance:none;flex:1;height:3px;
+    background:linear-gradient(90deg,var(--green) var(--val,35%),#1a3320 var(--val,35%));
+    outline:none;cursor:pointer;
+  }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance:none;width:12px;height:12px;background:var(--green);box-shadow:0 0 6px var(--green); }
+
+  /* ENERGY */
+  .energy-container { background:var(--bg2);border:1px solid var(--border);padding:12px;margin:10px 0; }
+  #energyCanvas { width:100%;height:56px;display:block; }
+
+  /* LOG */
+  .log-panel {
+    background:var(--bg2);border:1px solid var(--border);
+    padding:10px 12px;margin:10px 0;height:90px;
+    overflow-y:auto;font-size:.65rem;line-height:1.75;
+  }
+  .log-panel::-webkit-scrollbar{width:3px;}
+  .log-panel::-webkit-scrollbar-thumb{background:var(--green-dim);}
+  .log-line{opacity:.75;}
+  .log-line.hi{color:var(--amber);opacity:1;}
+  .log-line.ok{color:var(--green);opacity:1;text-shadow:0 0 5px var(--green);}
+  .log-line.er{color:var(--red);}
+
+  footer { text-align:center;padding:24px 10px 16px;font-size:.55rem;color:#1a3320;letter-spacing:.2em;line-height:2; }
+  footer a { color:#1a4020;text-decoration:none; }
+  footer a:hover { color:var(--green-dim); }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <header>
+    <div class="title-main">PATTERN RETRIEVAL</div>
+    <div class="title-sub">// HOPFIELD ASSOCIATIVE MEMORY NETWORK //</div>
+    <div style="font-family:'Orbitron',sans-serif;font-size:clamp(.75rem,2.5vw,1.1rem);font-weight:700;letter-spacing:.5em;color:var(--amber);text-shadow:0 0 12px var(--amber),0 0 25px rgba(255,179,0,.3);margin-top:8px;">BY JAHIDUL</div>
+    <div class="status-bar">
+      <span>110 NEURONS</span>
+      <span id="netStatus">IDLE</span>
+      <span id="memCount">4 MEMORIES</span>
+    </div>
+  </header>
+
+  <div class="deco">SYSTEM ONLINE</div>
+
+  <!-- PATTERN BANK -->
+  <div class="panel" style="margin:2px 0 10px;">
+    <div class="panel-label">⬡ STORED PATTERN BANK — SELECT A MEMORY</div>
+    <div class="pattern-selector" id="patternSelector"></div>
+  </div>
+
+  <!-- CANVASES -->
+  <div class="main-grid">
+    <div class="panel">
+      <div class="panel-label">⬡ ORIGINAL MEMORY</div>
+      <div class="pixel-canvas" id="canvasOriginal"></div>
+    </div>
+    <div class="panel">
+      <div class="panel-label" id="recallLabel">⬡ NETWORK STATE</div>
+      <div class="pixel-canvas" id="canvasRecall"></div>
+    </div>
+  </div>
+
+  <!-- METRICS -->
+  <div class="metrics">
+    <div class="metric-box">
+      <span class="metric-val" id="mFidelity">---</span>
+      <div class="metric-label">FIDELITY %</div>
+    </div>
+    <div class="metric-box">
+      <span class="metric-val" id="mPass">0/0</span>
+      <div class="metric-label">PASSES</div>
+    </div>
+    <div class="metric-box">
+      <span class="metric-val" id="mEnergy">---</span>
+      <div class="metric-label">ENERGY</div>
+    </div>
+  </div>
+  <div class="progress-wrap"><div class="progress-bar" id="progressBar"></div></div>
+
+  <!-- NOISE SLIDER -->
+  <div class="slider-wrap">
+    <span>CORRUPTION</span>
+    <input type="range" id="noiseSlider" min="10" max="60" value="35"
+      oninput="this.style.setProperty('--val',this.value+'%');document.getElementById('noiseVal').textContent=this.value+'%'">
+    <span id="noiseVal">35%</span>
+  </div>
+
+  <!-- CONTROLS -->
+  <div class="controls">
+    <button class="btn" id="btnCorrupt" onclick="corruptPattern()" disabled>[ CORRUPT ]</button>
+    <button class="btn" id="btnRecall"  onclick="startRecall()"   disabled>[ RECALL ]</button>
+    <button class="btn" id="btnReset"   onclick="resetView()">[ RESET ]</button>
+    <button class="btn primary" id="btnAuto" onclick="autoDemo()" disabled>[ AUTO DEMO ]</button>
+  </div>
+
+  <!-- ENERGY GRAPH -->
+  <div class="energy-container">
+    <div class="panel-label">⬡ ENERGY LANDSCAPE</div>
+    <canvas id="energyCanvas" height="56"></canvas>
+  </div>
+
+  <!-- LOG -->
+  <div class="log-panel" id="logPanel">
+    <div class="log-line hi">// PATTERN RETRIEVAL — HOPFIELD NETWORK INITIALIZED</div>
+    <div class="log-line">// SELECT A PATTERN FROM THE BANK ABOVE</div>
+    <div class="log-line">// THEN CORRUPT → RECALL TO SEE MEMORY RECOVERY</div>
+  </div>
+
+  <footer>
+    PATTERN RETRIEVAL &nbsp;·&nbsp; HOPFIELD ASSOCIATIVE MEMORY &nbsp;·&nbsp; 110 NEURON NETWORK<br>
+    INSPIRED BY <a href="https://patternretrieval.app" target="_blank">PATTERNRETRIEVAL.APP</a><br><br>
+    CREATED BY &nbsp;<span style="color:var(--green);text-shadow:0 0 10px var(--green);letter-spacing:.3em;font-family:'Orbitron',sans-serif;font-size:.7rem;">JAHIDUL</span>
+  </footer>
+</div>
+
+<script>
+// ═══════════════════════════════════
+// PATTERNS  (10 rows × 11 cols = 110)
+// ═══════════════════════════════════
+const PATTERNS = [
+  { label:'♥', name:'HEART', data:[
+    [0,0,1,1,0,0,0,1,1,0,0],
+    [0,1,1,1,1,0,1,1,1,1,0],
+    [1,1,1,1,1,1,1,1,1,1,1],
+    [1,1,1,1,1,1,1,1,1,1,1],
+    [0,1,1,1,1,1,1,1,1,1,0],
+    [0,0,1,1,1,1,1,1,1,0,0],
+    [0,0,0,1,1,1,1,1,0,0,0],
+    [0,0,0,0,1,1,1,0,0,0,0],
+    [0,0,0,0,0,1,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,0],
+  ]},
+  { label:'★', name:'STAR', data:[
+    [0,0,0,0,0,1,0,0,0,0,0],
+    [0,0,0,0,1,1,1,0,0,0,0],
+    [1,1,1,1,1,1,1,1,1,1,1],
+    [0,1,1,1,1,1,1,1,1,1,0],
+    [0,0,1,1,1,1,1,1,1,0,0],
+    [0,1,0,0,1,1,1,0,0,1,0],
+    [1,0,0,0,0,1,0,0,0,0,1],
+    [0,0,0,0,0,1,0,0,0,0,0],
+    [0,0,0,0,0,1,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,0],
+  ]},
+  { label:'⚡', name:'BOLT', data:[
+    [0,0,0,0,1,1,1,1,1,0,0],
+    [0,0,0,1,1,1,1,1,0,0,0],
+    [0,0,1,1,1,1,1,0,0,0,0],
+    [0,0,1,1,1,1,0,0,0,0,0],
+    [0,1,1,1,1,1,1,1,0,0,0],
+    [0,0,0,1,1,1,1,1,1,0,0],
+    [0,0,0,0,0,1,1,1,1,0,0],
+    [0,0,0,0,0,0,1,1,1,0,0],
+    [0,0,0,0,0,0,0,1,1,0,0],
+    [0,0,0,0,0,0,0,0,1,0,0],
+  ]},
+  { label:'▲', name:'PYRAMID', data:[
+    [0,0,0,0,0,1,0,0,0,0,0],
+    [0,0,0,0,1,1,1,0,0,0,0],
+    [0,0,0,1,1,1,1,1,0,0,0],
+    [0,0,1,1,1,1,1,1,1,0,0],
+    [0,1,1,1,0,1,0,1,1,1,0],
+    [1,1,1,0,0,1,0,0,1,1,1],
+    [1,1,0,0,0,1,0,0,0,1,1],
+    [1,0,0,0,0,1,0,0,0,0,1],
+    [1,1,1,1,1,1,1,1,1,1,1],
+    [0,0,0,0,0,0,0,0,0,0,0],
+  ]},
+  { label:'🌙', name:'MOON', data:[
+    [0,0,0,0,1,1,1,0,0,0,0],
+    [0,0,0,1,1,1,1,1,0,0,0],
+    [0,0,1,1,1,1,1,1,0,0,0],
+    [0,1,1,1,1,1,1,0,0,0,0],
+    [0,1,1,1,1,1,0,0,0,0,0],
+    [0,1,1,1,1,1,0,0,0,0,0],
+    [0,1,1,1,1,1,1,0,0,0,0],
+    [0,0,1,1,1,1,1,1,0,0,0],
+    [0,0,0,1,1,1,1,1,0,0,0],
+    [0,0,0,0,1,1,1,0,0,0,0],
+  ]},
+  { label:'🏠', name:'HOUSE', data:[
+    [0,0,0,0,0,1,0,0,0,0,0],
+    [0,0,0,0,1,1,1,0,0,0,0],
+    [0,0,0,1,1,1,1,1,0,0,0],
+    [0,0,1,1,1,1,1,1,1,0,0],
+    [0,1,1,1,1,1,1,1,1,1,0],
+    [1,1,1,1,1,1,1,1,1,1,1],
+    [0,1,1,1,1,1,1,1,1,1,0],
+    [0,1,1,0,0,1,0,0,1,1,0],
+    [0,1,1,0,0,1,0,0,1,1,0],
+    [0,1,1,1,1,1,1,1,1,1,0],
+  ]},
+  { label:'✈', name:'PLANE', data:[
+    [0,0,0,0,0,1,0,0,0,0,0],
+    [0,0,0,0,1,1,1,0,0,0,0],
+    [0,0,0,0,1,1,1,0,0,0,0],
+    [0,1,1,1,1,1,1,1,1,1,0],
+    [1,1,1,1,1,1,1,1,1,1,1],
+    [0,1,1,1,1,1,1,1,1,1,0],
+    [0,0,0,0,1,1,1,0,0,0,0],
+    [0,0,0,1,1,1,1,1,0,0,0],
+    [0,0,0,0,0,1,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,0],
+  ]},
+  { label:'🌸', name:'FLOWER', data:[
+    [0,0,0,1,1,0,1,1,0,0,0],
+    [0,0,1,1,1,1,1,1,1,0,0],
+    [0,1,1,1,0,1,0,1,1,1,0],
+    [1,1,0,0,1,1,1,0,0,1,1],
+    [1,1,0,1,1,1,1,1,0,1,1],
+    [1,1,0,0,1,1,1,0,0,1,1],
+    [0,1,1,1,0,1,0,1,1,1,0],
+    [0,0,1,1,1,1,1,1,1,0,0],
+    [0,0,0,0,0,1,0,0,0,0,0],
+    [0,0,0,0,0,1,0,0,0,0,0],
+  ]},
+  { label:'🔮', name:'DIAMOND', data:[
+    [0,0,0,0,0,1,0,0,0,0,0],
+    [0,0,0,0,1,1,1,0,0,0,0],
+    [0,0,0,1,1,1,1,1,0,0,0],
+    [0,0,1,1,1,1,1,1,1,0,0],
+    [0,1,1,1,1,1,1,1,1,1,0],
+    [0,0,1,1,1,1,1,1,1,0,0],
+    [0,0,0,1,1,1,1,1,0,0,0],
+    [0,0,0,0,1,1,1,0,0,0,0],
+    [0,0,0,0,0,1,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,0],
+  ]},
+  { label:'☀', name:'SUN', data:[
+    [0,1,0,0,0,1,0,0,0,1,0],
+    [0,0,1,0,0,1,0,0,1,0,0],
+    [0,0,0,1,1,1,1,1,0,0,0],
+    [0,0,1,1,1,1,1,1,1,0,0],
+    [1,1,1,1,1,1,1,1,1,1,1],
+    [0,0,1,1,1,1,1,1,1,0,0],
+    [0,0,0,1,1,1,1,1,0,0,0],
+    [0,0,1,0,0,1,0,0,1,0,0],
+    [0,1,0,0,0,1,0,0,0,1,0],
+    [0,0,0,0,0,0,0,0,0,0,0],
+  ]},
+];
+
+// ═══════════════════════════════════
+// HOPFIELD ENGINE
+// ═══════════════════════════════════
+const ROWS=10, COLS=11, N=110;
+let weights = new Float32Array(N*N);
+let storedVecs = [];
+let currentVec = null;
+let recallState = null;
+let isRunning = false;
+let activeIdx = -1;
+let energyHistory = [];
+
+function p2v(data){
+  const v=new Float32Array(N);
+  for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++) v[r*COLS+c]=data[r][c]?1:-1;
+  return v;
+}
+
+function storeVec(v){
+  for(let i=0;i<N;i++) for(let j=0;j<N;j++) if(i!==j) weights[i*N+j]+=(v[i]*v[j])/N;
+}
+
+function hopfieldStep(s){
+  const nx=new Float32Array(s);
+  const ord=[...Array(N).keys()].sort(()=>Math.random()-.5);
+  for(const i of ord){
+    let sum=0; for(let j=0;j<N;j++) sum+=weights[i*N+j]*s[j];
+    nx[i]=sum>=0?1:-1;
+  }
+  return nx;
+}
+
+function energy(s){
+  let e=0;
+  for(let i=0;i<N;i++) for(let j=0;j<N;j++) e-=weights[i*N+j]*s[i]*s[j];
+  return e/2;
+}
+
+function fidelity(a,b){
+  let m=0; for(let i=0;i<N;i++) if(a[i]===b[i]) m++;
+  return Math.round(m/N*100);
+}
+
+// ═══════════════════════════════════
+// RENDER
+// ═══════════════════════════════════
+function renderCanvas(id, vec, mask=null){
+  const el=document.getElementById(id);
+  el.innerHTML='';
+  for(let r=0;r<ROWS;r++){
+    const row=document.createElement('div');
+    row.className='pixel-row';
+    for(let c=0;c<COLS;c++){
+      const i=r*COLS+c;
+      const px=document.createElement('div');
+      px.className='pixel '+(mask&&mask[i]?'corrupted':vec[i]===1?'on':'off');
+      row.appendChild(px);
+    }
+    el.appendChild(row);
+  }
+}
+
+function renderRecover(id, vec, orig){
+  const pxs=document.getElementById(id).querySelectorAll('.pixel');
+  pxs.forEach((px,i)=>{
+    px.className='pixel ';
+    if(vec[i]===1) px.className+=(vec[i]===orig[i]?'on':'recovering');
+    else px.className+='off';
+  });
+}
+
+// ═══════════════════════════════════
+// ENERGY GRAPH
+// ═══════════════════════════════════
+function drawEnergy(){
+  const canvas=document.getElementById('energyCanvas');
+  const ctx=canvas.getContext('2d');
+  canvas.width=canvas.offsetWidth||800;
+  const W=canvas.width,H=56;
+  ctx.clearRect(0,0,W,H);
+  if(energyHistory.length<2){
+    ctx.strokeStyle='#1a3320';ctx.beginPath();ctx.moveTo(0,H/2);ctx.lineTo(W,H/2);ctx.stroke();
+    return;
+  }
+  const mn=Math.min(...energyHistory),mx=Math.max(...energyHistory),rng=mx-mn||1;
+  ctx.strokeStyle='#00ff41';ctx.shadowColor='#00ff41';ctx.shadowBlur=5;ctx.lineWidth=1.5;
+  ctx.beginPath();
+  energyHistory.forEach((e,i)=>{
+    const x=(i/(energyHistory.length-1))*W;
+    const y=H-((e-mn)/rng)*(H-8)-4;
+    i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);
+  });
+  ctx.stroke();
+  ctx.shadowBlur=0;ctx.lineTo(W,H);ctx.lineTo(0,H);ctx.closePath();
+  ctx.fillStyle='rgba(0,255,65,.04)';ctx.fill();
+}
+
+// ═══════════════════════════════════
+// LOG
+// ═══════════════════════════════════
+function log(msg,type=''){
+  const p=document.getElementById('logPanel');
+  const d=document.createElement('div');
+  d.className='log-line '+type;
+  const t=new Date().toLocaleTimeString('en',{hour12:false});
+  d.textContent=`[${t}] ${msg}`;
+  p.appendChild(d);
+  p.scrollTop=p.scrollHeight;
+  while(p.children.length>30) p.removeChild(p.firstChild);
+}
+
+// ═══════════════════════════════════
+// UI
+// ═══════════════════════════════════
+function updateMetrics(fid,pass,eng){
+  document.getElementById('mFidelity').textContent=typeof fid==='number'?fid+'%':fid;
+  document.getElementById('mPass').textContent=pass;
+  document.getElementById('mEnergy').textContent=typeof eng==='number'?eng.toFixed(0):eng;
+}
+
+function buildBank(){
+  const sel=document.getElementById('patternSelector');
+  sel.innerHTML='';
+  PATTERNS.forEach((p,i)=>{
+    const btn=document.createElement('button');
+    btn.className='pat-btn'+(i===activeIdx?' active':'');
+    btn.innerHTML=`${p.label}<span class="tooltip">${p.name}</span>`;
+    btn.onclick=()=>selectPattern(i);
+    sel.appendChild(btn);
+  });
+}
+
+function selectPattern(idx){
+  activeIdx=idx;
+  currentVec=storedVecs[idx];
+  recallState=null;
+  renderCanvas('canvasOriginal',currentVec);
+  renderCanvas('canvasRecall',currentVec);
+  document.getElementById('recallLabel').textContent='⬡ NETWORK STATE';
+  document.getElementById('netStatus').textContent='READY';
+  energyHistory=[energy(currentVec)];
+  updateMetrics(100,'0/0',energy(currentVec));
+  drawEnergy();
+  document.getElementById('progressBar').style.width='0%';
+  document.getElementById('btnCorrupt').disabled=false;
+  document.getElementById('btnRecall').disabled=true;
+  document.getElementById('btnAuto').disabled=false;
+  buildBank();
+  log(`MEMORY LOADED: ${PATTERNS[idx].name}`,'hi');
+}
+
+// ═══════════════════════════════════
+// CORRUPT
+// ═══════════════════════════════════
+function corruptPattern(){
+  if(!currentVec||isRunning) return;
+  const rate=document.getElementById('noiseSlider').value/100;
+  recallState=new Float32Array(currentVec);
+  const mask=new Uint8Array(N);
+  for(let i=0;i<N;i++) if(Math.random()<rate){recallState[i]*=-1;mask[i]=1;}
+  const f=fidelity(currentVec,recallState);
+  renderCanvas('canvasRecall',recallState,mask);
+  document.getElementById('recallLabel').textContent='⬡ CORRUPTED INPUT';
+  document.getElementById('netStatus').textContent='CORRUPTED';
+  energyHistory=[energy(recallState)];
+  updateMetrics(f,'0/0',energy(recallState));
+  drawEnergy();
+  document.getElementById('btnRecall').disabled=false;
+  document.getElementById('btnCorrupt').disabled=true;
+  log(`CORRUPTION: ${Math.round(rate*100)}% neurons flipped — fidelity: ${f}%`,'er');
+}
+
+// ═══════════════════════════════════
+// RECALL
+// ═══════════════════════════════════
+async function startRecall(){
+  if(!recallState||isRunning) return;
+  isRunning=true;
+  document.getElementById('btnRecall').disabled=true;
+  document.getElementById('netStatus').textContent='RECALLING';
+  document.getElementById('recallLabel').textContent='⬡ RECALLING...';
+  log('RECALL STARTED — Hopfield updates running','hi');
+
+  const MAX=14; let pass=0;
+  const tick=async()=>{
+    if(pass>=MAX){done();return;}
+    pass++;
+    recallState=hopfieldStep(recallState);
+    const e=energy(recallState);
+    energyHistory.push(e);
+    const f=fidelity(currentVec,recallState);
+    updateMetrics(f,`${pass}/${MAX}`,e);
+    document.getElementById('progressBar').style.width=(pass/MAX*100)+'%';
+    renderRecover('canvasRecall',recallState,currentVec);
+    drawEnergy();
+    log(`PASS ${pass}/${MAX} · energy: ${e.toFixed(1)} · fidelity: ${f}%`);
+    if(f>=98){done(f);return;}
+    await sleep(160);
+    tick();
+  };
+  tick();
+}
+
+function done(f){
+  isRunning=false;
+  const fid=f??fidelity(currentVec,recallState);
+  renderCanvas('canvasRecall',recallState);
+  const ok=fid>=95;
+  document.getElementById('recallLabel').textContent=ok?'⬡ MEMORY RETRIEVED ✓':'⬡ PARTIAL RECALL';
+  document.getElementById('netStatus').textContent=ok?'RETRIEVED':'PARTIAL';
+  document.getElementById('btnCorrupt').disabled=false;
+  document.getElementById('progressBar').style.width='100%';
+  log(ok?`FULLY RETRIEVED — fidelity: ${fid}%`:`RECALL DONE — fidelity: ${fid}%`, ok?'ok':'hi');
+}
+
+// ═══════════════════════════════════
+// AUTO DEMO
+// ═══════════════════════════════════
+async function autoDemo(){
+  if(isRunning) return;
+  document.getElementById('btnAuto').disabled=true;
+  await sleep(300);
+  corruptPattern();
+  await sleep(700);
+  await startRecall();
+  await sleep(1000);
+  document.getElementById('btnAuto').disabled=false;
+}
+
+function resetView(){
+  if(isRunning) return;
+  if(activeIdx>=0) selectPattern(activeIdx);
+  else {
+    document.getElementById('canvasOriginal').innerHTML='';
+    document.getElementById('canvasRecall').innerHTML='';
+    document.getElementById('progressBar').style.width='0%';
+    updateMetrics('---','0/0','---');
+    energyHistory=[];drawEnergy();
+    log('RESET COMPLETE');
+  }
+}
+
+function sleep(ms){return new Promise(r=>setTimeout(r,ms));}
+
+// ═══════════════════════════════════
+// INIT
+// ═══════════════════════════════════
+PATTERNS.forEach(p=>{
+  const v=p2v(p.data);
+  storeVec(v);
+  storedVecs.push(v);
+});
+document.getElementById('memCount').textContent=`${PATTERNS.length} MEMORIES`;
+buildBank();
+selectPattern(0);
+window.addEventListener('resize',drawEnergy);
+</script>
+</body>
+</html>
